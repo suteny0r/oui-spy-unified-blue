@@ -3,3 +3,6 @@
 .DS_Store
 *.o
 *.d
+firmware/*.bin
+__pycache__/
+.venv/

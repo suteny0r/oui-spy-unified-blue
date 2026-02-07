@@ -97,16 +97,44 @@ On power-up, the device starts a WiFi access point (`oui-spy` / `ouispy123` by d
 
 ---
 
-## Building
+## Flashing
+
+### Quick Flash (no PlatformIO needed)
+
+Just Python, a USB cable, and a `.bin` file.
+
+```bash
+pip install esptool pyserial
+```
+
+Drop your compiled firmware into the `firmware/` folder, plug in the XIAO ESP32-S3, and run:
+
+```bash
+python flash.py
+```
+
+The script auto-detects your board and flashes it. Done.
+
+**Options:**
+
+```bash
+python flash.py                        # auto-detect bin from firmware/ folder
+python flash.py my_firmware.bin        # flash a specific file
+python flash.py --erase                # full erase before flashing
+python flash.py my_firmware.bin --erase
+```
+
+### Building from Source
 
 Requires [PlatformIO](https://platformio.org/).
 
 ```bash
-cd unified
 pio run                     # build
-pio run -t upload           # flash
-pio device monitor          # serial output
+pio run -t upload           # flash directly
+pio device monitor          # serial output (115200 baud)
 ```
+
+The build output lands in `.pio/build/seeed_xiao_esp32s3/firmware.bin` — copy that into `firmware/` if you want to use the flasher script instead.
 
 **Dependencies** (managed by PlatformIO):
 
@@ -115,7 +143,7 @@ pio device monitor          # serial output
 - `ArduinoJson` — JSON serialization
 - `Adafruit NeoPixel` — LED control
 
-**Flash layout:** Custom partition table with ~2MB LittleFS data partition. See `partitions.csv`.
+**Flash layout:** Custom partition table with ~6MB app + ~2MB LittleFS data. See `partitions.csv`.
 
 ---
 
