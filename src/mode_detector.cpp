@@ -11,9 +11,6 @@
 #include <ESPAsyncWebServer.h>
 #include <Preferences.h>
 #include <NimBLEDevice.h>
-#include <NimBLEUtils.h>
-#include <NimBLEScan.h>
-#include <NimBLEAdvertisedDevice.h>
 #include <esp_log.h>
 #include <esp_wifi.h>
 #include <nvs_flash.h>

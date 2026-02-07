@@ -3,10 +3,7 @@
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
 #include <Preferences.h>
-#include <NimBLEDevice.h>
-#include <NimBLEUtils.h>
-#include <NimBLEScan.h>
-#include <NimBLEAdvertisedDevice.h>
+// NimBLE included by wrapper
 #include <esp_log.h>
 #include <esp_wifi.h>
 #include <nvs_flash.h>
@@ -15,19 +12,24 @@
 #include <Adafruit_NeoPixel.h>
 
 // ================================
-// Pin and Buzzer Definitions - Xiao ESP32 S3
+// Board-specific Pin Definitions
 // ================================
-#define BUZZER_PIN 3   // GPIO3 (D2) for buzzer - good PWM pin on Xiao ESP32 S3
+#if defined(ARDUINO_XIAO_ESP32C5)
+  #define BUZZER_PIN 25         // D2 = GPIO25 on XIAO ESP32-C5
+  #define LED_PIN 27            // LED_BUILTIN = GPIO27 (active HIGH)
+  #define LED_INVERTED false
+  #define NEOPIXEL_PIN 7        // D3 = GPIO7 on XIAO ESP32-C5
+#else
+  #define BUZZER_PIN 3          // D2 = GPIO3 on XIAO ESP32-S3
+  #define LED_PIN 21            // Built-in LED (active LOW / inverted)
+  #define LED_INVERTED true
+  #define NEOPIXEL_PIN 4        // D3 = GPIO4 on XIAO ESP32-S3
+#endif
+
 #define BUZZER_FREQ 2000  // Frequency in Hz
 #define BUZZER_DUTY 127  // 50% duty cycle for good volume without excessive power draw
 #define BEEP_DURATION 200  // Duration of each beep in ms
 #define BEEP_PAUSE 50  // Pause between beeps in ms (faster sequence)
-#define LED_PIN 21   // GPIO21 for onboard LED (inverted logic)
-
-// ================================
-// NeoPixel Definitions - Xiao ESP32 S3
-// ================================
-#define NEOPIXEL_PIN 4   // GPIO4 (D3) for NeoPixel - confirmed safe pin on Xiao ESP32 S3
 #define NEOPIXEL_COUNT 1 // Number of NeoPixels (1 for single pixel)
 #define NEOPIXEL_BRIGHTNESS 50 // Brightness (0-255)
 #define NEOPIXEL_DETECTION_BRIGHTNESS 200 // Brightness during detection (0-255)
@@ -124,17 +126,25 @@ bool isSerialConnected() {
 }
 
 // ================================
-// LED Control Functions (inverted logic for Xiao ESP32-S3)
+// LED Control Functions (auto-adapts for S3 inverted vs C5 normal)
 // ================================
 void ledOn() {
     if (ledEnabled) {
-        digitalWrite(LED_PIN, LOW);  // LOW = LED ON for Xiao ESP32-S3
+        #if LED_INVERTED
+        digitalWrite(LED_PIN, LOW);
+        #else
+        digitalWrite(LED_PIN, HIGH);
+        #endif
     }
 }
 
 void ledOff() {
     if (ledEnabled) {
-        digitalWrite(LED_PIN, HIGH); // HIGH = LED OFF for Xiao ESP32-S3
+        #if LED_INVERTED
+        digitalWrite(LED_PIN, HIGH);
+        #else
+        digitalWrite(LED_PIN, LOW);
+        #endif
     }
 }
 
@@ -144,12 +154,15 @@ void ledOff() {
 void initializeBuzzer() {
     pinMode(BUZZER_PIN, OUTPUT);
     digitalWrite(BUZZER_PIN, LOW);
-    ledcSetup(0, BUZZER_FREQ, 8);
-    ledcAttachPin(BUZZER_PIN, 0);
+    ledcAttach(BUZZER_PIN, BUZZER_FREQ, 8);
     
-    // Setup LED (inverted logic - HIGH = OFF for Xiao ESP32-S3)
+    // Setup LED
     pinMode(LED_PIN, OUTPUT);
-    digitalWrite(LED_PIN, HIGH);
+    #if LED_INVERTED
+    digitalWrite(LED_PIN, HIGH);  // OFF (inverted)
+    #else
+    digitalWrite(LED_PIN, LOW);   // OFF (normal)
+    #endif
 }
 
 void digitalBeep(int duration) {
@@ -164,12 +177,12 @@ void digitalBeep(int duration) {
 
 void singleBeep() {
     if (buzzerEnabled) {
-        ledcWrite(0, BUZZER_DUTY);
+        ledcWrite(BUZZER_PIN, BUZZER_DUTY);
     }
     ledOn();
     delay(BEEP_DURATION);
     if (buzzerEnabled) {
-        ledcWrite(0, 0);
+        ledcWrite(BUZZER_PIN, 0);
         digitalBeep(BEEP_DURATION);
     }
     ledOff();
@@ -337,13 +350,13 @@ void ascendingBeeps() {
     
     for (int i = 0; i < 2; i++) {
         if (buzzerEnabled) {
-            ledcSetup(0, frequencies[i], 8);
-            ledcWrite(0, BUZZER_DUTY);
+            ledcChangeFrequency(BUZZER_PIN, frequencies[i], 8);
+            ledcWrite(BUZZER_PIN, BUZZER_DUTY);
         }
         ledOn();
         delay(BEEP_DURATION);
         if (buzzerEnabled) {
-            ledcWrite(0, 0);
+            ledcWrite(BUZZER_PIN, 0);
         }
         ledOff();
         if (i < 1) delay(fastPause);
@@ -351,7 +364,7 @@ void ascendingBeeps() {
     
     // Reset to original frequency for future beeps
     if (buzzerEnabled) {
-        ledcSetup(0, BUZZER_FREQ, 8);
+        ledcChangeFrequency(BUZZER_PIN, BUZZER_FREQ, 8);
     }
 }
 
@@ -2169,8 +2182,8 @@ void startConfigMode() {
 // ================================
 // BLE Advertised Device Callback Class
 // ================================
-class MyAdvertisedDeviceCallbacks: public NimBLEAdvertisedDeviceCallbacks {
-    void onResult(NimBLEAdvertisedDevice* advertisedDevice) {
+class MyAdvertisedDeviceCallbacks: public NimBLEScanCallbacks {
+    void onResult(const NimBLEAdvertisedDevice* advertisedDevice) override {
         if (currentMode != SCANNING_MODE) return;
         
         String mac = advertisedDevice->getAddress().toString().c_str();
@@ -2279,7 +2292,7 @@ void startScanningMode() {
     // Setup BLE scanning (but don't start)
     pBLEScan = NimBLEDevice::getScan();
     if (pBLEScan != nullptr) {
-        pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks());
+        pBLEScan->setScanCallbacks(new MyAdvertisedDeviceCallbacks());
         pBLEScan->setActiveScan(true);
         pBLEScan->setInterval(300);
         pBLEScan->setWindow(200);
@@ -2294,7 +2307,7 @@ void startScanningMode() {
     
     // NOW start BLE scanning - after ready signal is complete
     if (pBLEScan != nullptr) {
-        pBLEScan->start(3, nullptr, false);
+        pBLEScan->start(3000);
         
         if (isSerialConnected()) {
             Serial.println("BLE scanning started!");
@@ -2529,7 +2542,7 @@ void loop() {
         if (currentMillis - lastScanTime >= 3000) {
             pBLEScan->stop();
             delay(10);
-            pBLEScan->start(2, nullptr, false);
+            pBLEScan->start(2000);
             lastScanTime = currentMillis;
         }
 

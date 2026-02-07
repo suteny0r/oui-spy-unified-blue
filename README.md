@@ -61,13 +61,16 @@ After relaunching, connect to the `flockyou` AP, open `192.168.4.1`, and tap the
 
 > **Note:** iOS Safari does not support Geolocation over HTTP. GPS wardriving requires Android with Chrome.
 
-### Mode 4: Sky Spy
+### Mode 5: Sky Spy
 
-Passive drone detection via FAA Remote ID (Open Drone ID) WiFi beacon monitoring. Listens in promiscuous mode for ASTM F3411 compliant broadcasts and extracts drone telemetry.
+Passive drone detection via FAA Remote ID (Open Drone ID). Listens in promiscuous mode for ASTM F3411 compliant broadcasts over WiFi and BLE, extracting drone telemetry in real time.
 
+- **Dual-band support:** ESP32-C5 scans both 2.4GHz and 5GHz WiFi channels with fast channel hopping (~30ms dwell), plus BLE. ESP32-S3 scans 2.4GHz + BLE (single-band)
 - Captures drone serial numbers, operator/UAV IDs
 - Tracks location (lat/lon), altitude, ground speed, heading
 - Parses all ODID message types: Basic ID, Location, Authentication, Self-ID, System, Operator ID
+- JSON serial output includes detection band (`2.4GHz`, `5GHz`, `BLE`) and WiFi channel
+- Board-auto-detect: pin mapping and LED logic adapt automatically for C5 vs S3
 - Real-time logging of all detected drones
 - Dedicated FreeRTOS buzzer task for non-blocking audio alerts
 
@@ -75,13 +78,14 @@ Passive drone detection via FAA Remote ID (Open Drone ID) WiFi beacon monitoring
 
 ## Hardware
 
-**Board:** Seeed Studio XIAO ESP32-S3
+**Primary board:** Seeed Studio XIAO ESP32-S3 (2.4GHz WiFi + BLE)
+**Dual-band board:** Seeed Studio XIAO ESP32-C5 (2.4GHz + 5GHz WiFi 6 + BLE)
 
-| Pin | Function |
-|-----|----------|
-| GPIO 3 | Piezo buzzer |
-| GPIO 21 | NeoPixel LED |
-| GPIO 0 | BOOT button (hold 2s to return to mode selector) |
+| Pin | ESP32-S3 | ESP32-C5 | Function |
+|-----|----------|----------|----------|
+| D2 | GPIO 3 | GPIO 25 | Piezo buzzer |
+| LED | GPIO 21 (inverted) | GPIO 27 | Status LED |
+| BOOT | GPIO 0 | GPIO 28 | Hold 2s to return to mode selector |
 
 ---
 

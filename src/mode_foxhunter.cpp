@@ -11,8 +11,6 @@
 #include <ESPAsyncWebServer.h>
 #include <Preferences.h>
 #include <NimBLEDevice.h>
-#include <NimBLEScan.h>
-#include <NimBLEAdvertisedDevice.h>
 #include <esp_wifi.h>
 #include "modes.h"
 

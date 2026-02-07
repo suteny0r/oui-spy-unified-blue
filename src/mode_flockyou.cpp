@@ -10,8 +10,6 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <NimBLEDevice.h>
-#include <NimBLEScan.h>
-#include <NimBLEAdvertisedDevice.h>
 #include <ArduinoJson.h>
 #include <Preferences.h>
 #include <string.h>

@@ -16,12 +16,22 @@
 #include <Preferences.h>
 #include "modes.h"
 
-// Hardware pins (shared across all modes)
-#define BUZZER_PIN 3
-#define LED_PIN 21
-
-// Boot button (GPIO0) - held during boot to return to selector menu
-#define BOOT_BUTTON_PIN 0
+// ============================================================================
+// Board-specific pin configuration
+// ============================================================================
+#if defined(ARDUINO_XIAO_ESP32C5)
+  #define BUZZER_PIN 25         // D2 = GPIO25 on XIAO ESP32-C5
+  #define LED_PIN 27            // LED_BUILTIN = GPIO27
+  #define LED_INVERTED false    // Active HIGH on C5
+  #define BOOT_BUTTON_PIN 28    // GPIO28 - BOOT button on XIAO ESP32-C5
+  #define BOARD_NAME "XIAO ESP32-C5"
+#else
+  #define BUZZER_PIN 3          // GPIO3 (D2) on XIAO ESP32-S3
+  #define LED_PIN 21            // GPIO21 - built-in LED (active LOW / inverted)
+  #define LED_INVERTED true
+  #define BOOT_BUTTON_PIN 0     // GPIO0 - BOOT button on S3
+  #define BOARD_NAME "XIAO ESP32-S3"
+#endif
 #define BOOT_HOLD_TIME 1500  // ms - hold boot button this long to force selector
 
 static Preferences prefs;
@@ -142,7 +152,7 @@ body{margin:0;height:100vh;height:-webkit-fill-available;font-family:monospace;b
 <div class="i" onclick="go(1)"><div class="n">DETECTOR</div><div class="d">BLE Alert Tool for Specific Devices</div></div>
 <div class="i" onclick="go(2)"><div class="n">FOXHUNTER</div><div class="d">RSSI Proximity Tracker</div></div>
 <div class="i" onclick="go(4)"><div class="n">FLOCK-YOU</div><div class="d">Surveillance Detector &bull; AP: flockyou</div></div>
-<div class="i" onclick="go(5)"><div class="n">SKY SPY</div><div class="d">Drone Remote ID Monitor</div></div>
+<div class="i" onclick="go(5)"><div class="n">SKY SPY</div><div class="d">Drone Remote ID &bull; Dual-Band Ready</div></div>
 </div>
 <div class="ap">
 <input type="text" id="ap_ssid" placeholder="SSID" maxlength="32" value="%SSID%">
@@ -159,7 +169,7 @@ body{margin:0;height:100vh;height:-webkit-fill-available;font-family:monospace;b
 </div>
 </div>
 <script>
-var info={1:{t:'DETECTOR',s:'Scans for BLE devices and alerts when specific targets are detected. Configure OUI prefixes and MAC addresses to monitor.'},2:{t:'FOXHUNTER',s:'Track down a specific device using RSSI signal strength. Beeps get faster as you get closer to your target.'},4:{t:'FLOCK-YOU',s:'Detects Flock Safety surveillance cameras via BLE. Serves web dashboard on AP flockyou with live detections, pattern DB, and JSON/CSV export.'},5:{t:'SKY SPY',s:'Monitors for FAA Remote ID broadcasts from drones. Detects Open Drone ID signals over WiFi and BLE.'}};
+var info={1:{t:'DETECTOR',s:'Scans for BLE devices and alerts when specific targets are detected. Configure OUI prefixes and MAC addresses to monitor.'},2:{t:'FOXHUNTER',s:'Track down a specific device using RSSI signal strength. Beeps get faster as you get closer to your target.'},4:{t:'FLOCK-YOU',s:'Detects Flock Safety surveillance cameras via BLE. Serves web dashboard on AP flockyou with live detections, pattern DB, and JSON/CSV export.'},5:{t:'SKY SPY',s:'Monitors for FAA Remote ID broadcasts from drones via WiFi and BLE. Dual-band support (2.4GHz + 5GHz) on ESP32-C5, single-band on S3.'}};
 function go(m){var d=info[m];document.getElementById('yt').textContent=d.t;document.getElementById('ys').textContent=d.s;document.getElementById('x').style.display='none';document.getElementById('y').style.display='flex';fetch('/select?mode='+m)}
 function saveAP(){
 var s=document.getElementById('ap_ssid').value.trim();
@@ -179,11 +189,9 @@ function saveBZ(on){fetch('/buzzer?on='+(on?'1':'0'))}
 // Boot Jingle for Selector - Zelda "Secret Discovered" Style
 // ============================================================================
 static void playNote(int freq, int duration) {
-    ledcSetup(0, freq, 8);
-    ledcAttachPin(BUZZER_PIN, 0);
-    ledcWrite(0, 100);
+    tone(BUZZER_PIN, freq, duration);
     delay(duration);
-    ledcWrite(0, 0);
+    noTone(BUZZER_PIN);
 }
 
 static void selectorBeep() {
@@ -200,9 +208,17 @@ static void selectorBeep() {
     // LED flash sync
     pinMode(LED_PIN, OUTPUT);
     for (int i = 0; i < 3; i++) {
-        digitalWrite(LED_PIN, LOW);   // On
+        #if LED_INVERTED
+        digitalWrite(LED_PIN, LOW);
+        #else
+        digitalWrite(LED_PIN, HIGH);
+        #endif
         delay(50);
-        digitalWrite(LED_PIN, HIGH);  // Off
+        #if LED_INVERTED
+        digitalWrite(LED_PIN, HIGH);
+        #else
+        digitalWrite(LED_PIN, LOW);
+        #endif
         delay(50);
     }
 }
@@ -225,23 +241,23 @@ static bool checkBootButton() {
     Serial.flush();
     
     // Button is pressed - wait for hold duration with beep feedback
+    ledcAttach(BUZZER_PIN, 2000, 8);
     unsigned long start = millis();
     while (millis() - start < BOOT_HOLD_TIME) {
         if (digitalRead(BOOT_BUTTON_PIN) == HIGH) {
             Serial.println("[OUI-SPY] Boot button released too early");
+            ledcWriteTone(BUZZER_PIN, 0);
             return false;  // Released before threshold
         }
         // Quick beep feedback every 300ms so user knows it's working
         if ((millis() - start) % 300 < 50) {
-            ledcSetup(0, 2000, 8);
-            ledcAttachPin(BUZZER_PIN, 0);
-            ledcWrite(0, 80);
+            ledcWriteTone(BUZZER_PIN, 2000);
         } else {
-            ledcWrite(0, 0);
+            ledcWriteTone(BUZZER_PIN, 0);
         }
         delay(10);
     }
-    ledcWrite(0, 0);  // Stop beeping
+    ledcWriteTone(BUZZER_PIN, 0);  // Stop beeping
     
     Serial.println("[OUI-SPY] *** BOOT BUTTON HELD *** -> FORCING SELECTOR");
     Serial.flush();
@@ -434,7 +450,11 @@ void setup() {
     pinMode(BUZZER_PIN, OUTPUT);
     digitalWrite(BUZZER_PIN, LOW);
     pinMode(LED_PIN, OUTPUT);
-    digitalWrite(LED_PIN, HIGH);  // LED off (inverted logic on XIAO)
+    #if LED_INVERTED
+    digitalWrite(LED_PIN, HIGH);  // LED off (inverted)
+    #else
+    digitalWrite(LED_PIN, LOW);   // LED off (normal)
+    #endif
     
     // CRITICAL: Nuke ALL stored WiFi config from NVS.
     // The ESP32 persists AP SSID/password in flash and auto-restores it,
@@ -544,12 +564,11 @@ static void checkBootButtonLoop() {
             // Held long enough - triple beep confirmation then reboot to menu
             Serial.println("\n[OUI-SPY] *** BOOT BUTTON HELD -> RETURNING TO MENU ***");
             Serial.flush();
+            ledcAttach(BUZZER_PIN, 3000, 8);
             for (int i = 0; i < 3; i++) {
-                ledcSetup(0, 3000, 8);
-                ledcAttachPin(BUZZER_PIN, 0);
-                ledcWrite(0, 100);
+                ledcWriteTone(BUZZER_PIN, 3000);
                 delay(80);
-                ledcWrite(0, 0);
+                ledcWriteTone(BUZZER_PIN, 0);
                 delay(60);
             }
             // Clear mode and reboot
@@ -583,7 +602,11 @@ void loop() {
                 static bool ledState = false;
                 if (millis() - lastLed > 1000) {
                     ledState = !ledState;
+                    #if LED_INVERTED
                     digitalWrite(LED_PIN, ledState ? LOW : HIGH);
+                    #else
+                    digitalWrite(LED_PIN, ledState ? HIGH : LOW);
+                    #endif
                     lastLed = millis();
                 }
             }

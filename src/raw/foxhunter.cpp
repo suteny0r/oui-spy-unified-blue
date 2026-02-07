@@ -2,16 +2,21 @@
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
 #include <Preferences.h>
-#include <NimBLEDevice.h>
-#include <NimBLEScan.h>
-#include <NimBLEAdvertisedDevice.h>
+// NimBLE included by wrapper
 #include <esp_wifi.h>
 
-// Hardware configuration
-#define BUZZER_PIN 3
+// Board-specific pin configuration
+#if defined(ARDUINO_XIAO_ESP32C5)
+  #define BUZZER_PIN 25         // D2 = GPIO25 on XIAO ESP32-C5
+  #define LED_PIN 27            // LED_BUILTIN = GPIO27 (active HIGH)
+  #define LED_INVERTED false
+#else
+  #define BUZZER_PIN 3          // D2 = GPIO3 on XIAO ESP32-S3
+  #define LED_PIN 21            // Built-in LED (active LOW / inverted)
+  #define LED_INVERTED true
+#endif
 #define BUZZER_FREQ 2000
 #define BUZZER_DUTY 127
-#define LED_PIN 21
 
 // Network configuration
 const char* AP_SSID = "foxhunter";
@@ -75,28 +80,36 @@ int calculateBeepInterval(int rssi) {
     }
 }
 
-// LED control functions (inverted logic for Xiao ESP32-S3)
+// LED control functions (auto-adapts for S3 inverted vs C5 normal)
 void ledOn() {
     if (ledEnabled) {
-        digitalWrite(LED_PIN, LOW);  // LOW = LED ON for Xiao ESP32-S3
+        #if LED_INVERTED
+        digitalWrite(LED_PIN, LOW);
+        #else
+        digitalWrite(LED_PIN, HIGH);
+        #endif
     }
 }
 
 void ledOff() {
     if (ledEnabled) {
-        digitalWrite(LED_PIN, HIGH); // HIGH = LED OFF for Xiao ESP32-S3
+        #if LED_INVERTED
+        digitalWrite(LED_PIN, HIGH);
+        #else
+        digitalWrite(LED_PIN, LOW);
+        #endif
     }
 }
 
 // Buzzer functions
 void singleBeep() {
     if (buzzerEnabled) {
-        ledcWrite(0, BUZZER_DUTY);
+        ledcWrite(BUZZER_PIN, BUZZER_DUTY);
     }
     ledOn();
     delay(100);
     if (buzzerEnabled) {
-        ledcWrite(0, 0);
+        ledcWrite(BUZZER_PIN, 0);
     }
     ledOff();
 }
@@ -118,50 +131,50 @@ void zeldaSecretBeep() {
     };
 
     for (auto& n : notes) {
-        ledcWriteTone(0, n.freq);
-        ledcWrite(0, BUZZER_DUTY);
+        ledcWriteTone(BUZZER_PIN, n.freq);
+        ledcWrite(BUZZER_PIN, BUZZER_DUTY);
         ledOn();
         delay(n.ms);
-        ledcWrite(0, 0);
+        ledcWrite(BUZZER_PIN, 0);
         ledOff();
         delay(15);  // tiny gap between notes for articulation
     }
 
     // Reset to proximity frequency, buzzer OFF
-    ledcWriteTone(0, 1000);
-    ledcWrite(0, 0);
+    ledcWriteTone(BUZZER_PIN, 1000);
+    ledcWrite(BUZZER_PIN, 0);
     delay(300);
 }
 
 void ascendingBeeps() {
     // Ready signal - 2 fast ascending beeps with close melodic notes
     if (buzzerEnabled) {
-        ledcWriteTone(0, 1900);
-        ledcWrite(0, BUZZER_DUTY);
+        ledcWriteTone(BUZZER_PIN, 1900);
+        ledcWrite(BUZZER_PIN, BUZZER_DUTY);
     }
     ledOn();
     delay(150);
     if (buzzerEnabled) {
-        ledcWrite(0, 0);
+        ledcWrite(BUZZER_PIN, 0);
     }
     ledOff();
     delay(50);
     
     if (buzzerEnabled) {
-        ledcWriteTone(0, 2200);
-        ledcWrite(0, BUZZER_DUTY);
+        ledcWriteTone(BUZZER_PIN, 2200);
+        ledcWrite(BUZZER_PIN, BUZZER_DUTY);
     }
     ledOn();
     delay(150);
     if (buzzerEnabled) {
-        ledcWrite(0, 0);
+        ledcWrite(BUZZER_PIN, 0);
     }
     ledOff();
     
     // Reset to proximity frequency and ENSURE buzzer is OFF
     if (buzzerEnabled) {
-        ledcWriteTone(0, 1000);  // Set to 1kHz for consistency with proximity beeps
-        ledcWrite(0, 0);  // Make sure buzzer is completely off
+        ledcWriteTone(BUZZER_PIN, 1000);  // Set to 1kHz for consistency with proximity beeps
+        ledcWrite(BUZZER_PIN, 0);  // Make sure buzzer is completely off
     }
     
     // Add delay to prevent interference with proximity beeps
@@ -175,8 +188,8 @@ void handleProximityBeeping() {
     // Ultra close - solid beep (continuous)
     if (currentRSSI >= -25) {
         if (buzzerEnabled) {
-            ledcWriteTone(0, 1000);
-            ledcWrite(0, BUZZER_DUTY);
+            ledcWriteTone(BUZZER_PIN, 1000);
+            ledcWrite(BUZZER_PIN, BUZZER_DUTY);
         }
         ledOn();
         isBeeping = true;
@@ -190,7 +203,7 @@ void handleProximityBeeping() {
         if (currentTime - lastBeepStart >= beepDuration) {
             // Turn off beep
             if (buzzerEnabled) {
-                ledcWrite(0, 0);
+                ledcWrite(BUZZER_PIN, 0);
             }
             ledOff();
             isBeeping = false;
@@ -201,8 +214,8 @@ void handleProximityBeeping() {
         if (currentTime - lastBeepStart >= beepInterval) {
             // Start new beep
             if (buzzerEnabled) {
-                ledcWriteTone(0, 1000);
-                ledcWrite(0, BUZZER_DUTY);
+                ledcWriteTone(BUZZER_PIN, 1000);
+                ledcWrite(BUZZER_PIN, BUZZER_DUTY);
             }
             ledOn();
             isBeeping = true;
@@ -219,13 +232,13 @@ void threeSameToneBeeps() {
     // Three beeps at same tone for initial detection - using 1kHz for consistency
     for (int i = 0; i < 3; i++) {
         if (buzzerEnabled) {
-            ledcWriteTone(0, 1000); // Same 1kHz tone as proximity beeps
-            ledcWrite(0, BUZZER_DUTY);
+            ledcWriteTone(BUZZER_PIN, 1000); // Same 1kHz tone as proximity beeps
+            ledcWrite(BUZZER_PIN, BUZZER_DUTY);
         }
         ledOn();
         delay(100);
         if (buzzerEnabled) {
-            ledcWrite(0, 0);
+            ledcWrite(BUZZER_PIN, 0);
         }
         ledOff();
         delay(50);
@@ -233,7 +246,7 @@ void threeSameToneBeeps() {
     
     // Ensure buzzer is OFF (frequency already at 1kHz)
     if (buzzerEnabled) {
-        ledcWrite(0, 0);
+        ledcWrite(BUZZER_PIN, 0);
     }
     
     // Add delay to prevent interference with proximity beeps
@@ -868,8 +881,8 @@ void startConfigMode() {
 }
 
 // BLE callback for device detection
-class MyAdvertisedDeviceCallbacks: public NimBLEAdvertisedDeviceCallbacks {
-    void onResult(NimBLEAdvertisedDevice* advertisedDevice) {
+class MyAdvertisedDeviceCallbacks: public NimBLEScanCallbacks {
+    void onResult(const NimBLEAdvertisedDevice* advertisedDevice) override {
         if (currentMode != TRACKING_MODE) return;
         
         String deviceMAC = advertisedDevice->getAddress().toString().c_str();
@@ -912,17 +925,17 @@ void startTrackingMode() {
     
     // Initialize BLE
     NimBLEDevice::init("");
-    NimBLEDevice::setPower(ESP_PWR_LVL_P9);
+    NimBLEDevice::setPower(9);
     
     pBLEScan = NimBLEDevice::getScan();
-    pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks());
+    pBLEScan->setScanCallbacks(new MyAdvertisedDeviceCallbacks());
     pBLEScan->setInterval(16);    // 16ms intervals (maximum speed)
     pBLEScan->setWindow(15);      // 15ms scan window (95% duty cycle)
     pBLEScan->setActiveScan(true);
     pBLEScan->setDuplicateFilter(false);
     
     // Start continuous scanning
-    pBLEScan->start(0, nullptr, false);
+    pBLEScan->start(0);
     
     Serial.println("FOXHUNT REALTIME tracking started!");
     
@@ -932,21 +945,29 @@ void startTrackingMode() {
 
 void setup() {
     Serial.begin(115200);
-    Serial.println("\n=== OUI-SPY FOXHUNT MODE for Xiao ESP32 S3 ===");
-    Serial.println("Hardware: Xiao ESP32 S3");
-    Serial.println("Buzzer: GPIO3");
+    Serial.println("\n=== OUI-SPY FOXHUNT MODE ===");
+    #if defined(ARDUINO_XIAO_ESP32C5)
+    Serial.println("Hardware: XIAO ESP32-C5");
+    Serial.printf("Buzzer: GPIO%d\n", BUZZER_PIN);
+    #else
+    Serial.println("Hardware: XIAO ESP32-S3");
+    Serial.printf("Buzzer: GPIO%d\n", BUZZER_PIN);
+    #endif
     Serial.println("Target: Single MAC address");
     Serial.println("Mode: REALTIME RSSI-based proximity beeping");
     Serial.println("Range: 5s (WEAK) to 100ms (STRONG)");
     Serial.println("Initializing...\n");
     
     // Setup buzzer - initialize to 1kHz for proximity beeps
-    ledcSetup(0, 1000, 8);  // 1kHz default frequency
-    ledcAttachPin(BUZZER_PIN, 0);
+    ledcAttach(BUZZER_PIN, 1000, 8);  // 1kHz default frequency
     
-    // Setup LED (inverted logic - HIGH = OFF for Xiao ESP32-S3)
+    // Setup LED
     pinMode(LED_PIN, OUTPUT);
-    digitalWrite(LED_PIN, HIGH);
+    #if LED_INVERTED
+    digitalWrite(LED_PIN, HIGH);  // OFF (inverted)
+    #else
+    digitalWrite(LED_PIN, LOW);   // OFF (normal)
+    #endif
     
     zeldaSecretBeep(); // Zelda secret discovery jingle on boot
     
@@ -1061,7 +1082,7 @@ void loop() {
             
             // Turn off beep and LED immediately
             if (buzzerEnabled) {
-                ledcWrite(0, 0);
+                ledcWrite(BUZZER_PIN, 0);
             }
             ledOff();
             isBeeping = false;

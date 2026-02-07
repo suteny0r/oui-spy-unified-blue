@@ -15,9 +15,7 @@
 
 #include <Arduino.h>
 #include <WiFi.h>
-#include <NimBLEDevice.h>
-#include <NimBLEScan.h>
-#include <NimBLEAdvertisedDevice.h>
+// NimBLE included by wrapper
 #include <ArduinoJson.h>
 #include <Preferences.h>
 #include <SPIFFS.h>
@@ -31,7 +29,12 @@
 // CONFIGURATION
 // ============================================================================
 
-#define BUZZER_PIN 3
+// Board-specific pin config
+#if defined(ARDUINO_XIAO_ESP32C5)
+  #define BUZZER_PIN 25         // D2 = GPIO25 on XIAO ESP32-C5
+#else
+  #define BUZZER_PIN 3          // GPIO3 (D2) on XIAO ESP32-S3
+#endif
 
 // Audio
 #define LOW_FREQ 200
@@ -263,7 +266,7 @@ static bool checkManufacturerID(uint16_t id) {
 // RAVEN UUID DETECTION
 // ============================================================================
 
-static bool checkRavenUUID(NimBLEAdvertisedDevice* device, char* out_uuid = nullptr) {
+static bool checkRavenUUID(const NimBLEAdvertisedDevice* device, char* out_uuid = nullptr) {
     if (!device || !device->haveServiceUUID()) return false;
     int count = device->getServiceUUIDCount();
     if (count == 0) return false;
@@ -280,7 +283,7 @@ static bool checkRavenUUID(NimBLEAdvertisedDevice* device, char* out_uuid = null
     return false;
 }
 
-static const char* estimateRavenFW(NimBLEAdvertisedDevice* device) {
+static const char* estimateRavenFW(const NimBLEAdvertisedDevice* device) {
     if (!device || !device->haveServiceUUID()) return "?";
     bool has_new_gps = false, has_old_loc = false, has_power = false;
     int count = device->getServiceUUIDCount();
@@ -371,8 +374,8 @@ static int fyAddDetection(const char* mac, const char* name, int rssi,
 // BLE SCANNING
 // ============================================================================
 
-class FYBLECallbacks : public NimBLEAdvertisedDeviceCallbacks {
-    void onResult(NimBLEAdvertisedDevice* dev) override {
+class FYBLECallbacks : public NimBLEScanCallbacks {
+    void onResult(const NimBLEAdvertisedDevice* dev) override {
         NimBLEAddress addr = dev->getAddress();
         std::string addrStr = addr.toString();
 
@@ -934,13 +937,13 @@ void setup() {
     // Init BLE scanner FIRST -- start scanning immediately
     NimBLEDevice::init("");
     fyBLEScan = NimBLEDevice::getScan();
-    fyBLEScan->setAdvertisedDeviceCallbacks(new FYBLECallbacks());
+    fyBLEScan->setScanCallbacks(new FYBLECallbacks());
     fyBLEScan->setActiveScan(true);
     fyBLEScan->setInterval(100);
     fyBLEScan->setWindow(99);
 
     // Kick off the first scan right away
-    fyBLEScan->start(BLE_SCAN_DURATION, false);
+    fyBLEScan->start(BLE_SCAN_DURATION * 1000);
     fyLastBleScan = millis();
     printf("[FLOCK-YOU] BLE scanning ACTIVE\n");
 
@@ -965,7 +968,7 @@ void setup() {
 void loop() {
     // BLE scanning cycle
     if (millis() - fyLastBleScan >= BLE_SCAN_INTERVAL && !fyBLEScan->isScanning()) {
-        fyBLEScan->start(BLE_SCAN_DURATION, false);
+        fyBLEScan->start(BLE_SCAN_DURATION * 1000);
         fyLastBleScan = millis();
     }
 
