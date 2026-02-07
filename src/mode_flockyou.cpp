@@ -22,6 +22,7 @@
 #include "esp_wifi_types.h"
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
+#include <SPIFFS.h>
 #include "modes.h"
 
 // Rename setup/loop

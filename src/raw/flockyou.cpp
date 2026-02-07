@@ -20,6 +20,7 @@
 #include <NimBLEAdvertisedDevice.h>
 #include <ArduinoJson.h>
 #include <Preferences.h>
+#include <SPIFFS.h>
 #include <string.h>
 #include <ctype.h>
 #include <stdio.h>
@@ -149,6 +150,14 @@ static float  fyGPSAcc = 0;
 static bool   fyGPSValid = false;
 static unsigned long fyGPSLastUpdate = 0;
 #define GPS_STALE_MS 30000  // GPS considered stale after 30s without update
+
+// Session persistence (SPIFFS)
+#define FY_SESSION_FILE  "/session.json"
+#define FY_PREV_FILE     "/prev_session.json"
+#define FY_SAVE_INTERVAL 60000  // Auto-save every 60 seconds
+static unsigned long fyLastSave = 0;
+static int fyLastSaveCount = 0;  // Track changes to avoid unnecessary writes
+static bool fySpiffsReady = false;
 
 // ============================================================================
 // AUDIO SYSTEM
@@ -490,6 +499,91 @@ static void writeDetectionsJSON(AsyncResponseStream *resp) {
 }
 
 // ============================================================================
+// SESSION PERSISTENCE (SPIFFS)
+// ============================================================================
+
+static void fySaveSession() {
+    if (!fySpiffsReady || !fyMutex) return;
+    if (xSemaphoreTake(fyMutex, pdMS_TO_TICKS(300)) != pdTRUE) return;
+
+    File f = SPIFFS.open(FY_SESSION_FILE, "w");
+    if (!f) { xSemaphoreGive(fyMutex); return; }
+
+    f.print("[");
+    for (int i = 0; i < fyDetCount; i++) {
+        if (i > 0) f.print(",");
+        FYDetection& d = fyDet[i];
+        f.printf("{\"mac\":\"%s\",\"name\":\"%s\",\"rssi\":%d,\"method\":\"%s\","
+                 "\"first\":%lu,\"last\":%lu,\"count\":%d,"
+                 "\"raven\":%s,\"fw\":\"%s\"",
+                 d.mac, d.name, d.rssi, d.method,
+                 d.firstSeen, d.lastSeen, d.count,
+                 d.isRaven ? "true" : "false", d.ravenFW);
+        if (d.hasGPS) {
+            f.printf(",\"gps\":{\"lat\":%.8f,\"lon\":%.8f,\"acc\":%.1f}", d.gpsLat, d.gpsLon, d.gpsAcc);
+        }
+        f.print("}");
+    }
+    f.print("]");
+    f.close();
+    fyLastSaveCount = fyDetCount;
+    printf("[FLOCK-YOU] Session saved: %d detections\n", fyDetCount);
+    xSemaphoreGive(fyMutex);
+}
+
+static void fyPromotePrevSession() {
+    // Move current session file to prev_session on boot
+    if (!fySpiffsReady) return;
+    if (SPIFFS.exists(FY_SESSION_FILE)) {
+        // Remove old prev if exists
+        if (SPIFFS.exists(FY_PREV_FILE)) SPIFFS.remove(FY_PREV_FILE);
+        SPIFFS.rename(FY_SESSION_FILE, FY_PREV_FILE);
+        printf("[FLOCK-YOU] Prior session promoted from flash\n");
+    }
+}
+
+// ============================================================================
+// KML EXPORT
+// ============================================================================
+
+static void writeDetectionsKML(AsyncResponseStream *resp) {
+    resp->print("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+                "<kml xmlns=\"http://www.opengis.net/kml/2.2\">\n<Document>\n"
+                "<name>Flock-You Detections</name>\n"
+                "<description>Surveillance device detections with GPS</description>\n");
+
+    // Detection pin style
+    resp->print("<Style id=\"det\"><IconStyle><color>ff4489ec</color>"
+                "<scale>1.0</scale></IconStyle></Style>\n"
+                "<Style id=\"raven\"><IconStyle><color>ff4444ef</color>"
+                "<scale>1.2</scale></IconStyle></Style>\n");
+
+    if (fyMutex && xSemaphoreTake(fyMutex, pdMS_TO_TICKS(300)) == pdTRUE) {
+        for (int i = 0; i < fyDetCount; i++) {
+            FYDetection& d = fyDet[i];
+            if (!d.hasGPS) continue;  // Skip detections without GPS
+            resp->print("<Placemark>\n");
+            resp->printf("<name>%s</name>\n", d.mac);
+            resp->printf("<styleUrl>#%s</styleUrl>\n", d.isRaven ? "raven" : "det");
+            resp->print("<description><![CDATA[");
+            if (d.name[0]) resp->printf("<b>Name:</b> %s<br/>", d.name);
+            resp->printf("<b>Method:</b> %s<br/>"
+                         "<b>RSSI:</b> %d dBm<br/>"
+                         "<b>Count:</b> %d<br/>",
+                         d.method, d.rssi, d.count);
+            if (d.isRaven) resp->printf("<b>Raven FW:</b> %s<br/>", d.ravenFW);
+            resp->printf("<b>Accuracy:</b> %.1f m", d.gpsAcc);
+            resp->print("]]></description>\n");
+            resp->printf("<Point><coordinates>%.8f,%.8f,0</coordinates></Point>\n",
+                         d.gpsLon, d.gpsLat);
+            resp->print("</Placemark>\n");
+        }
+        xSemaphoreGive(fyMutex);
+    }
+    resp->print("</Document>\n</kml>");
+}
+
+// ============================================================================
 // DASHBOARD HTML
 // ============================================================================
 
@@ -539,31 +633,41 @@ h4{color:#ec4899;font-size:14px;margin-bottom:8px}
 </div>
 <div class="tb">
 <button class="a" onclick="tab(0,this)">LIVE</button>
-<button onclick="tab(1,this)">DB</button>
-<button onclick="tab(2,this)">TOOLS</button>
+<button onclick="tab(1,this)">PREV</button>
+<button onclick="tab(2,this)">DB</button>
+<button onclick="tab(3,this)">TOOLS</button>
 </div>
 <div class="cn">
 <div class="pn a" id="p0">
 <div id="dL"><div class="empty">Scanning for surveillance devices...<br>BLE active on all channels</div></div>
 </div>
-<div class="pn" id="p1"><div id="pC">Loading patterns...</div></div>
-<div class="pn" id="p2">
+<div class="pn" id="p1"><div id="hL"><div class="empty">Loading prior session...</div></div></div>
+<div class="pn" id="p2"><div id="pC">Loading patterns...</div></div>
+<div class="pn" id="p3">
 <h4>EXPORT DETECTIONS</h4>
-<p style="font-size:10px;color:#8b5cf6;margin-bottom:8px">Download detections to import into the Flask dashboard via serial or file upload</p>
+<p style="font-size:10px;color:#8b5cf6;margin-bottom:8px">Download current session to import into Flask dashboard</p>
 <button class="btn" onclick="location.href='/api/export/json'">DOWNLOAD JSON</button>
 <button class="btn" onclick="location.href='/api/export/csv'">DOWNLOAD CSV</button>
+<button class="btn" onclick="location.href='/api/export/kml'" style="background:#22c55e">DOWNLOAD KML (GPS MAP)</button>
+<hr class="sep">
+<h4>PRIOR SESSION</h4>
+<button class="btn" onclick="location.href='/api/history/json'" style="background:#6366f1">DOWNLOAD PREV JSON</button>
+<button class="btn" onclick="location.href='/api/history/kml'" style="background:#22c55e">DOWNLOAD PREV KML</button>
 <hr class="sep">
 <button class="btn dng" onclick="if(confirm('Clear all detections?'))fetch('/api/clear').then(()=>refresh())">CLEAR ALL DETECTIONS</button>
 </div>
 </div>
 <script>
-let D=[];
-function tab(i,el){document.querySelectorAll('.tb button').forEach(b=>b.classList.remove('a'));document.querySelectorAll('.pn').forEach(p=>p.classList.remove('a'));el.classList.add('a');document.getElementById('p'+i).classList.add('a');if(i===1&&!window._pL)loadPat();}
+let D=[],H=[];
+function tab(i,el){document.querySelectorAll('.tb button').forEach(b=>b.classList.remove('a'));document.querySelectorAll('.pn').forEach(p=>p.classList.remove('a'));el.classList.add('a');document.getElementById('p'+i).classList.add('a');if(i===1&&!window._hL)loadHistory();if(i===2&&!window._pL)loadPat();}
 function refresh(){fetch('/api/detections').then(r=>r.json()).then(d=>{D=d;render();stats();}).catch(()=>{});}
 function render(){const el=document.getElementById('dL');if(!D.length){el.innerHTML='<div class="empty">Scanning for surveillance devices...<br>BLE active on all channels</div>';return;}
-D.sort((a,b)=>b.last-a.last);el.innerHTML=D.map(d=>'<div class="det"><div class="mac">'+d.mac+(d.name?'<span class="nm">'+d.name+'</span>':'')+'</div><div class="inf"><span>RSSI: '+d.rssi+'</span><span>'+d.method+'</span><span style="color:#ec4899;font-weight:bold">&times;'+d.count+'</span>'+(d.raven?'<span class="rv">RAVEN '+d.fw+'</span>':'')+(d.gps?'<span style="color:#22c55e">&#9673; '+d.gps.lat.toFixed(5)+','+d.gps.lon.toFixed(5)+'</span>':'<span style="color:#666">no gps</span>')+'</div></div>').join('');}
+D.sort((a,b)=>b.last-a.last);el.innerHTML=D.map(card).join('');}
 function stats(){document.getElementById('sT').textContent=D.length;document.getElementById('sR').textContent=D.filter(d=>d.raven).length;
 fetch('/api/stats').then(r=>r.json()).then(s=>{let g=document.getElementById('sG');if(s.gps_valid){g.textContent=s.gps_tagged+'/'+s.total;g.style.color='#22c55e';}else{g.textContent='OFF';g.style.color='#ef4444';}}).catch(()=>{});}
+function card(d){return '<div class="det"><div class="mac">'+d.mac+(d.name?'<span class="nm">'+d.name+'</span>':'')+'</div><div class="inf"><span>RSSI: '+d.rssi+'</span><span>'+d.method+'</span><span style="color:#ec4899;font-weight:bold">&times;'+d.count+'</span>'+(d.raven?'<span class="rv">RAVEN '+d.fw+'</span>':'')+(d.gps?'<span style="color:#22c55e">&#9673; '+d.gps.lat.toFixed(5)+','+d.gps.lon.toFixed(5)+'</span>':'<span style="color:#666">no gps</span>')+'</div></div>';}
+function loadHistory(){fetch('/api/history').then(r=>r.json()).then(d=>{H=d;let el=document.getElementById('hL');if(!H.length){el.innerHTML='<div class="empty">No prior session data</div>';return;}
+H.sort((a,b)=>b.last-a.last);el.innerHTML='<div style="font-size:11px;color:#8b5cf6;margin-bottom:8px">'+H.length+' detections from prior session</div>'+H.map(card).join('');window._hL=1;}).catch(()=>{document.getElementById('hL').innerHTML='<div class="empty">No prior session data</div>';});}
 function loadPat(){fetch('/api/patterns').then(r=>r.json()).then(p=>{let h='';
 h+='<div class="pg"><h3>MAC Prefixes ('+p.macs.length+')</h3><div class="it">'+p.macs.map(m=>'<span>'+m+'</span>').join('')+'</div></div>';
 h+='<div class="pg"><h3>BLE Device Names ('+p.names.length+')</h3><div class="it">'+p.names.map(n=>'<span>'+n+'</span>').join('')+'</div></div>';
@@ -708,8 +812,76 @@ static void fySetupServer() {
         r->send(resp);
     });
 
-    // API: Clear all detections
+    // API: Export KML (GPS-tagged detections for Google Earth)
+    fyServer.on("/api/export/kml", HTTP_GET, [](AsyncWebServerRequest *r) {
+        AsyncResponseStream *resp = r->beginResponseStream("application/vnd.google-earth.kml+xml");
+        resp->addHeader("Content-Disposition", "attachment; filename=\"flockyou_detections.kml\"");
+        writeDetectionsKML(resp);
+        r->send(resp);
+    });
+
+    // API: Prior session history (JSON)
+    fyServer.on("/api/history", HTTP_GET, [](AsyncWebServerRequest *r) {
+        if (fySpiffsReady && SPIFFS.exists(FY_PREV_FILE)) {
+            r->send(SPIFFS, FY_PREV_FILE, "application/json");
+        } else {
+            r->send(200, "application/json", "[]");
+        }
+    });
+
+    // API: Download prior session as JSON file
+    fyServer.on("/api/history/json", HTTP_GET, [](AsyncWebServerRequest *r) {
+        if (fySpiffsReady && SPIFFS.exists(FY_PREV_FILE)) {
+            AsyncWebServerResponse *resp = r->beginResponse(SPIFFS, FY_PREV_FILE, "application/json");
+            resp->addHeader("Content-Disposition", "attachment; filename=\"flockyou_prev_session.json\"");
+            r->send(resp);
+        } else {
+            r->send(404, "application/json", "{\"error\":\"no prior session\"}");
+        }
+    });
+
+    // API: Download prior session as KML (reads JSON from SPIFFS, converts)
+    fyServer.on("/api/history/kml", HTTP_GET, [](AsyncWebServerRequest *r) {
+        if (!fySpiffsReady || !SPIFFS.exists(FY_PREV_FILE)) {
+            r->send(404, "application/json", "{\"error\":\"no prior session\"}");
+            return;
+        }
+        AsyncResponseStream *resp = r->beginResponseStream("application/vnd.google-earth.kml+xml");
+        resp->addHeader("Content-Disposition", "attachment; filename=\"flockyou_prev_session.kml\"");
+        // Read prev session and generate KML
+        File f = SPIFFS.open(FY_PREV_FILE, "r");
+        if (!f) { r->send(500, "text/plain", "read error"); return; }
+        String content = f.readString();
+        f.close();
+        resp->print("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+                    "<kml xmlns=\"http://www.opengis.net/kml/2.2\">\n<Document>\n"
+                    "<name>Flock-You Prior Session</name>\n");
+        // Parse JSON array and emit placemarks
+        JsonDocument doc;
+        DeserializationError err = deserializeJson(doc, content);
+        if (!err && doc.is<JsonArray>()) {
+            for (JsonObject d : doc.as<JsonArray>()) {
+                JsonObject gps = d["gps"];
+                if (!gps || !gps.containsKey("lat")) continue;
+                resp->printf("<Placemark><name>%s</name>\n", d["mac"] | "?");
+                resp->print("<description><![CDATA[");
+                if (d["name"].is<const char*>() && strlen(d["name"] | "") > 0)
+                    resp->printf("<b>Name:</b> %s<br/>", d["name"] | "");
+                resp->printf("<b>Method:</b> %s<br/><b>RSSI:</b> %d<br/><b>Count:</b> %d",
+                    d["method"] | "?", d["rssi"] | 0, d["count"] | 1);
+                resp->print("]]></description>\n");
+                resp->printf("<Point><coordinates>%.8f,%.8f,0</coordinates></Point>\n",
+                    (double)(gps["lon"] | 0.0), (double)(gps["lat"] | 0.0));
+                resp->print("</Placemark>\n");
+            }
+        }
+        resp->print("</Document>\n</kml>");
+        r->send(resp);
+    });
+
+    // API: Clear all detections (saves current session first)
     fyServer.on("/api/clear", HTTP_GET, [](AsyncWebServerRequest *r) {
+        fySaveSession();  // Persist before clearing
         if (fyMutex && xSemaphoreTake(fyMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
             fyDetCount = 0;
             memset(fyDet, 0, sizeof(fyDet));
@@ -718,7 +890,7 @@ static void fySetupServer() {
             xSemaphoreGive(fyMutex);
         }
         r->send(200, "application/json", "{\"status\":\"cleared\"}");
-        printf("[FLOCK-YOU] All detections cleared\n");
+        printf("[FLOCK-YOU] All detections cleared (session saved)\n");
     });
 
     fyServer.begin();
@@ -743,6 +915,16 @@ void setup() {
     digitalWrite(BUZZER_PIN, LOW);
 
     fyMutex = xSemaphoreCreateMutex();
+
+    // Init SPIFFS for session persistence
+    if (SPIFFS.begin(true)) {
+        fySpiffsReady = true;
+        printf("[FLOCK-YOU] SPIFFS ready\n");
+        // Promote last session to prev_session before we start a new one
+        fyPromotePrevSession();
+    } else {
+        printf("[FLOCK-YOU] SPIFFS init failed - no persistence\n");
+    }
 
     printf("\n========================================\n");
     printf("  FLOCK-YOU Surveillance Detector\n");
@@ -802,6 +984,14 @@ void loop() {
             fyDeviceInRange = false;
             fyTriggered = false;
         }
+    }
+
+    // Auto-save session to SPIFFS every 60s if detections changed
+    if (fySpiffsReady && millis() - fyLastSave >= FY_SAVE_INTERVAL) {
+        if (fyDetCount > 0 && fyDetCount != fyLastSaveCount) {
+            fySaveSession();
+        }
+        fyLastSave = millis();
     }
 
     delay(100);
