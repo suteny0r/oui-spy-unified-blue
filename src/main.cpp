@@ -187,12 +187,16 @@ static void playNote(int freq, int duration) {
 }
 
 static void selectorBeep() {
-    // Tetris Theme A (Korobeiniki) — first 4 notes, fast
-    // E5, B4, C5, D5
-    playNote(659, 35);   // E5
-    playNote(494, 35);   // B4
-    playNote(523, 35);   // C5
-    playNote(587, 35);   // D5
+    // 3 quick ascending tones — subtle boot confirmation
+    ledcSetup(0, 800, 8);
+    ledcAttachPin(BUZZER_PIN, 0);
+    ledcWrite(0, 40);     // low duty = quiet
+    delay(60);
+    ledcWriteTone(0, 1000);
+    delay(60);
+    ledcWriteTone(0, 1200);
+    delay(60);
+    ledcWrite(0, 0);
 }
 
 // ============================================================================
