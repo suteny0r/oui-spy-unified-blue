@@ -176,7 +176,7 @@ function saveBZ(on){fetch('/buzzer?on='+(on?'1':'0'))}
 )rawliteral";
 
 // ============================================================================
-// Boot Jingle for Selector - Mario Power-Up Sound
+// Boot Jingle for Selector - Mario Power-Up (Mushroom) Sound
 // ============================================================================
 static void playNote(int freq, int duration) {
     ledcSetup(0, freq, 8);
@@ -187,12 +187,16 @@ static void playNote(int freq, int duration) {
 }
 
 static void selectorBeep() {
-    // Super Mario Bros - Power-Up (mushroom) sound
-    // Fast ascending arpeggio — instantly recognizable
-    int notes[] = { 523, 659, 784, 1047, 1319, 1568 };
-    //               C5   E5   G5   C6    E6    G6
-    for (int i = 0; i < 6; i++) {
-        playNote(notes[i], 60);
+    // NES Super Mario Bros - Power-Up mushroom sound
+    // Rapid ascending C major arpeggios (sped-up Course Clear fanfare)
+    // Each note ~35ms, no gaps — fast sweep just like the original
+    int notes[] = {
+        262, 330, 392,          // C4  E4  G4
+        523, 659, 784,          // C5  E5  G5
+        1047, 1319, 1568, 2093  // C6  E6  G6  C7
+    };
+    for (int i = 0; i < 10; i++) {
+        playNote(notes[i], 35);
     }
 }
 
