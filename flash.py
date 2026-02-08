@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-OUI Spy Unified Blue — Firmware Flasher
+OUI Spy Unified Blue -- Firmware Flasher
 
 Drop your .bin in the firmware/ folder (or pass a path), plug in your
 XIAO ESP32-S3, and run:
 
     python flash.py
 
-Supports batch flashing — after each board finishes, swap it out and
+Supports batch flashing -- after each board finishes, swap it out and
 press Enter to flash the next one. Great for production runs.
 
 Works on macOS, Linux, and Windows.
@@ -16,13 +16,24 @@ Requirements:  pip install esptool pyserial
 """
 
 import glob
+import io
 import os
 import sys
 import time
 import subprocess
 import serial.tools.list_ports
 
-# ── Config ───────────────────────────────────────────────────────────────
+# Force UTF-8 on Windows so box-drawing / special chars don't garble
+if sys.platform == "win32":
+    os.system("")  # enable ANSI/VT100 on Win10+ terminals
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    else:
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+
+# -- Config ----------------------------------------------------------------
 APP_OFFSET    = "0x10000"
 BAUD          = "921600"
 CHIP          = "esp32s3"
@@ -37,9 +48,9 @@ ESP_VIDS = {
 }
 
 BANNER = """
-  ╔══════════════════════════════════════════╗
-  ║   OUI Spy Unified Blue — Flasher        ║
-  ╚══════════════════════════════════════════╝"""
+  +==========================================+
+  |   OUI Spy Unified Blue -- Flasher        |
+  +==========================================+"""
 
 
 def find_port():
@@ -211,7 +222,7 @@ def batch_mode(firmware, do_erase=False):
     print(BANNER)
     size_kb = os.path.getsize(firmware) / 1024
     print(f"""
-  BATCH MODE — flash boards one after another
+  BATCH MODE -- flash boards one after another
   Firmware:   {os.path.basename(firmware)}  ({size_kb:.0f} KB)
   Erase:      {"YES" if do_erase else "no"}
   
@@ -245,7 +256,7 @@ def batch_mode(firmware, do_erase=False):
         else:
             fail_count += 1
 
-        print(f"\n  ── Score: {success_count} flashed, {fail_count} failed ──")
+        print(f"\n  -- Score: {success_count} flashed, {fail_count} failed --")
 
         try:
             resp = input("\n  Swap board and press Enter for next (q to quit): ").strip().lower()
@@ -260,12 +271,12 @@ def batch_mode(firmware, do_erase=False):
         print(" ready.")
 
     print(f"""
-  ╔══════════════════════════════════════════╗
-  ║   Batch complete                         ║
-  ╠══════════════════════════════════════════╣
-  ║   Flashed:  {success_count:<5}                        ║
-  ║   Failed:   {fail_count:<5}                        ║
-  ╚══════════════════════════════════════════╝
+  +==========================================+
+  |   Batch complete                         |
+  +==========================================+
+  |   Flashed:  {success_count:<5}                        |
+  |   Failed:   {fail_count:<5}                        |
+  +==========================================+
 """)
 
 
