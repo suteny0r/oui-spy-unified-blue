@@ -7,14 +7,18 @@ XIAO ESP32-S3, and run:
 
     python flash.py
 
-That's it.
+Supports batch flashing — after each board finishes, swap it out and
+press Enter to flash the next one. Great for production runs.
 
-Requirements:  pip install esptool
+Works on macOS, Linux, and Windows.
+
+Requirements:  pip install esptool pyserial
 """
 
 import glob
 import os
 import sys
+import time
 import subprocess
 import serial.tools.list_ports
 
@@ -32,9 +36,14 @@ ESP_VIDS = {
     "0403",  # FTDI
 }
 
+BANNER = """
+  ╔══════════════════════════════════════════╗
+  ║   OUI Spy Unified Blue — Flasher        ║
+  ╚══════════════════════════════════════════╝"""
+
 
 def find_port():
-    """Auto-detect the ESP32 serial port."""
+    """Auto-detect the ESP32 serial port (macOS, Linux, Windows)."""
     ports = serial.tools.list_ports.comports()
     candidates = []
     for p in ports:
@@ -43,21 +52,30 @@ def find_port():
             candidates.append(p)
         elif "esp" in (p.description or "").lower():
             candidates.append(p)
+        # macOS
         elif "usbmodem" in (p.device or "").lower():
             candidates.append(p)
         elif "usbserial" in (p.device or "").lower():
             candidates.append(p)
+        # Linux
         elif "ttyACM" in (p.device or ""):
             candidates.append(p)
         elif "ttyUSB" in (p.device or ""):
             candidates.append(p)
+        # Windows — COM ports with a real description (skip built-in COM1)
+        elif sys.platform == "win32" and (p.device or "").upper().startswith("COM"):
+            port_num = p.device.upper().replace("COM", "")
+            if port_num.isdigit() and int(port_num) > 1:
+                candidates.append(p)
+
     if len(candidates) == 1:
         return candidates[0].device
     if len(candidates) > 1:
         print("\n  Multiple serial ports found:\n")
         for i, p in enumerate(candidates):
             desc = p.description or "unknown"
-            print(f"    [{i + 1}] {p.device}  ({desc})")
+            vid = f"{p.vid:04X}" if p.vid else "----"
+            print(f"    [{i + 1}] {p.device}  ({desc})  VID:{vid}")
         print()
         while True:
             try:
@@ -68,6 +86,24 @@ def find_port():
             except (ValueError, IndexError):
                 pass
             print("  Invalid choice, try again.")
+    return None
+
+
+def wait_for_port(timeout=30):
+    """Wait for an ESP32 to appear on USB. Returns port or None."""
+    print(f"\n  Waiting for ESP32 (plug in a board)...", end="", flush=True)
+    start = time.time()
+    last_dot = start
+    while time.time() - start < timeout:
+        port = find_port()
+        if port:
+            print(f" found!")
+            return port
+        if time.time() - last_dot >= 2:
+            print(".", end="", flush=True)
+            last_dot = time.time()
+        time.sleep(0.5)
+    print(" timeout.")
     return None
 
 
@@ -109,14 +145,12 @@ def find_firmware(path_arg=None):
     return None
 
 
-def flash(port, firmware):
-    """Flash the firmware using esptool."""
+def flash_one(port, firmware, do_erase=False, board_num=None):
+    """Flash a single board. Returns True on success."""
     size_kb = os.path.getsize(firmware) / 1024
+    label = f"  Board #{board_num}" if board_num else "  Target"
     print(f"""
-  ╔══════════════════════════════════════════╗
-  ║   OUI Spy Unified Blue — Flasher        ║
-  ╚══════════════════════════════════════════╝
-
+{label}
   Port:       {port}
   Firmware:   {os.path.basename(firmware)}  ({size_kb:.0f} KB)
   Chip:       {CHIP}
@@ -124,12 +158,10 @@ def flash(port, firmware):
   Baud:       {BAUD}
 """)
 
-    confirm = input("  Flash? [Y/n]: ").strip().lower()
-    if confirm and confirm != "y":
-        print("  Aborted.")
-        sys.exit(0)
+    if do_erase:
+        erase(port)
 
-    print("\n  Flashing...\n")
+    print("  Flashing...\n")
 
     cmd = [
         sys.executable, "-m", "esptool",
@@ -149,10 +181,11 @@ def flash(port, firmware):
     try:
         result = subprocess.run(cmd)
         if result.returncode == 0:
-            print("\n  Done! Device will reboot into the new firmware.\n")
+            print("\n  Done! Device will reboot into the new firmware.")
+            return True
         else:
             print(f"\n  esptool exited with code {result.returncode}")
-            sys.exit(result.returncode)
+            return False
     except FileNotFoundError:
         print("  esptool not found. Install it:\n")
         print("    pip install esptool\n")
@@ -161,7 +194,7 @@ def flash(port, firmware):
 
 def erase(port):
     """Full flash erase."""
-    print(f"\n  Erasing flash on {port}...\n")
+    print(f"  Erasing flash on {port}...\n")
     cmd = [
         sys.executable, "-m", "esptool",
         "--chip", CHIP,
@@ -173,22 +206,94 @@ def erase(port):
     print()
 
 
+def batch_mode(firmware, do_erase=False):
+    """Flash multiple boards one after another."""
+    print(BANNER)
+    size_kb = os.path.getsize(firmware) / 1024
+    print(f"""
+  BATCH MODE — flash boards one after another
+  Firmware:   {os.path.basename(firmware)}  ({size_kb:.0f} KB)
+  Erase:      {"YES" if do_erase else "no"}
+  
+  Plug in a board, flash, swap, repeat.
+  Press Ctrl+C when done.
+""")
+
+    board_num = 0
+    success_count = 0
+    fail_count = 0
+
+    while True:
+        board_num += 1
+
+        # Wait for a board to appear
+        port = wait_for_port(timeout=300)  # 5 min timeout
+        if not port:
+            print("\n  No board detected. Still waiting? Plug one in and try again.")
+            try:
+                input("  Press Enter to retry, Ctrl+C to quit: ")
+            except KeyboardInterrupt:
+                break
+            continue
+
+        # Give the port a moment to stabilize (Windows especially needs this)
+        time.sleep(1)
+
+        ok = flash_one(port, firmware, do_erase=do_erase, board_num=board_num)
+        if ok:
+            success_count += 1
+        else:
+            fail_count += 1
+
+        print(f"\n  ── Score: {success_count} flashed, {fail_count} failed ──")
+
+        try:
+            resp = input("\n  Swap board and press Enter for next (q to quit): ").strip().lower()
+            if resp in ("q", "quit", "exit"):
+                break
+        except (KeyboardInterrupt, EOFError):
+            break
+
+        # Wait for the old port to disappear and new one to appear
+        print("  Waiting for board swap...", end="", flush=True)
+        time.sleep(2)  # give time for USB disconnect
+        print(" ready.")
+
+    print(f"""
+  ╔══════════════════════════════════════════╗
+  ║   Batch complete                         ║
+  ╠══════════════════════════════════════════╣
+  ║   Flashed:  {success_count:<5}                        ║
+  ║   Failed:   {fail_count:<5}                        ║
+  ╚══════════════════════════════════════════╝
+""")
+
+
 def main():
     # Parse args
     args = sys.argv[1:]
     do_erase = "--erase" in args
+    do_batch = "--batch" in args
     bin_path = None
 
     for a in args:
-        if a == "--erase":
+        if a in ("--erase", "--batch"):
             continue
         if a in ("-h", "--help"):
             print("""
-  Usage:  python flash.py [firmware.bin] [--erase]
+  Usage:  python flash.py [firmware.bin] [--erase] [--batch]
 
   Options:
     firmware.bin   Path to .bin file (auto-detects from firmware/ folder)
     --erase        Erase entire flash before writing
+    --batch        Batch mode: flash multiple boards one after another
+
+  Single board:
+    python flash.py
+
+  Batch flash (production run):
+    python flash.py --batch
+    python flash.py --batch --erase
 
   Setup:
     pip install esptool pyserial
@@ -208,7 +313,21 @@ def main():
         print("    pip install esptool\n")
         sys.exit(1)
 
-    # Find port
+    # Find firmware first (same for all boards)
+    firmware = find_firmware(bin_path)
+    if not firmware:
+        print(f"\n  No .bin file found.")
+        print(f"  Drop your firmware in:  {FIRMWARE_DIR}/")
+        print(f"  Or pass it directly:    python flash.py my_firmware.bin\n")
+        sys.exit(1)
+
+    # Batch mode
+    if do_batch:
+        batch_mode(firmware, do_erase=do_erase)
+        return
+
+    # Single mode — find port
+    print(BANNER)
     port = find_port()
     if not port:
         print("\n  No ESP32 detected. Is the board plugged in?")
@@ -217,20 +336,24 @@ def main():
 
     print(f"  Found: {port}")
 
-    # Erase if requested
-    if do_erase:
-        erase(port)
+    confirm = input("\n  Flash? [Y/n]: ").strip().lower()
+    if confirm and confirm != "y":
+        print("  Aborted.")
+        sys.exit(0)
 
-    # Find firmware
-    firmware = find_firmware(bin_path)
-    if not firmware:
-        print(f"\n  No .bin file found.")
-        print(f"  Drop your firmware in:  {FIRMWARE_DIR}/")
-        print(f"  Or pass it directly:    python flash.py my_firmware.bin\n")
+    ok = flash_one(port, firmware, do_erase=do_erase)
+    if not ok:
         sys.exit(1)
 
-    # Flash
-    flash(port, firmware)
+    # Offer to flash another
+    try:
+        resp = input("\n  Flash another board? [y/N]: ").strip().lower()
+        if resp == "y":
+            batch_mode(firmware, do_erase=do_erase)
+    except (KeyboardInterrupt, EOFError):
+        pass
+
+    print()
 
 
 if __name__ == "__main__":
