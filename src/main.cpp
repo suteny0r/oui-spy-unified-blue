@@ -176,7 +176,7 @@ function saveBZ(on){fetch('/buzzer?on='+(on?'1':'0'))}
 )rawliteral";
 
 // ============================================================================
-// Boot Jingle for Selector - Mario Bros Underground Theme (first 6 notes)
+// Boot Jingle for Selector - Mario Power-Up Sound
 // ============================================================================
 static void playNote(int freq, int duration) {
     ledcSetup(0, freq, 8);
@@ -187,28 +187,12 @@ static void playNote(int freq, int duration) {
 }
 
 static void selectorBeep() {
-    // Super Mario Bros - Underground/Dungeon bass riff (World 1-2)
-    // C, C(oct), A, A(oct), Bb, Bb(oct) — fast and punchy
-    playNote(262, 80);    // C4
-    delay(10);
-    playNote(523, 80);    // C5
-    delay(10);
-    playNote(220, 80);    // A3
-    delay(10);
-    playNote(440, 80);    // A4
-    delay(10);
-    playNote(233, 80);    // Bb3
-    delay(10);
-    playNote(466, 80);    // Bb4
-    delay(60);
-
-    // LED flash sync
-    pinMode(LED_PIN, OUTPUT);
-    for (int i = 0; i < 3; i++) {
-        digitalWrite(LED_PIN, LOW);   // On
-        delay(50);
-        digitalWrite(LED_PIN, HIGH);  // Off
-        delay(50);
+    // Super Mario Bros - Power-Up (mushroom) sound
+    // Fast ascending arpeggio — instantly recognizable
+    int notes[] = { 523, 659, 784, 1047, 1319, 1568 };
+    //               C5   E5   G5   C6    E6    G6
+    for (int i = 0; i < 6; i++) {
+        playNote(notes[i], 60);
     }
 }
 
