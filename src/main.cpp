@@ -186,7 +186,7 @@ function saveBZ(on){fetch('/buzzer?on='+(on?'1':'0'))}
 )rawliteral";
 
 // ============================================================================
-// Boot Jingle for Selector - Zelda "Secret Discovered" Style
+// Boot Jingle for Selector - Mario Bros Underground Theme (first 6 notes)
 // ============================================================================
 static void playNote(int freq, int duration) {
     tone(BUZZER_PIN, freq, duration);
@@ -195,16 +195,21 @@ static void playNote(int freq, int duration) {
 }
 
 static void selectorBeep() {
-    // "Secret discovered" ascending jingle
-    playNote(784, 150);   // G5
-    delay(20);
-    playNote(988, 150);   // B5
-    delay(20);
-    playNote(1175, 150);  // D6
-    delay(20);
-    playNote(1568, 400);  // G6 (hold)
-    delay(100);
-    
+    // Super Mario Bros - Underground/Dungeon bass riff (World 1-2)
+    // C, C(oct), A, A(oct), Bb, Bb(oct) — fast and punchy
+    playNote(262, 80);    // C4
+    delay(10);
+    playNote(523, 80);    // C5
+    delay(10);
+    playNote(220, 80);    // A3
+    delay(10);
+    playNote(440, 80);    // A4
+    delay(10);
+    playNote(233, 80);    // Bb3
+    delay(10);
+    playNote(466, 80);    // Bb4
+    delay(60);
+
     // LED flash sync
     pinMode(LED_PIN, OUTPUT);
     for (int i = 0; i < 3; i++) {
