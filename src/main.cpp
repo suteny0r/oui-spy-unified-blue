@@ -176,7 +176,7 @@ function saveBZ(on){fetch('/buzzer?on='+(on?'1':'0'))}
 )rawliteral";
 
 // ============================================================================
-// Boot Jingle for Selector - Mario Power-Up (Mushroom) Sound
+// Boot Jingle for Selector - Tetris Theme (Korobeiniki) first 4 notes
 // ============================================================================
 static void playNote(int freq, int duration) {
     ledcSetup(0, freq, 8);
@@ -187,17 +187,12 @@ static void playNote(int freq, int duration) {
 }
 
 static void selectorBeep() {
-    // NES Super Mario Bros - Power-Up mushroom sound
-    // Rapid ascending C major arpeggios (sped-up Course Clear fanfare)
-    // Each note ~35ms, no gaps — fast sweep just like the original
-    int notes[] = {
-        262, 330, 392,          // C4  E4  G4
-        523, 659, 784,          // C5  E5  G5
-        1047, 1319, 1568, 2093  // C6  E6  G6  C7
-    };
-    for (int i = 0; i < 10; i++) {
-        playNote(notes[i], 35);
-    }
+    // Tetris Theme A (Korobeiniki) — first 4 notes, fast
+    // E5, B4, C5, D5
+    playNote(659, 35);   // E5
+    playNote(494, 35);   // B4
+    playNote(523, 35);   // C5
+    playNote(587, 35);   // D5
 }
 
 // ============================================================================
