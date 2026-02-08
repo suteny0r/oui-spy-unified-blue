@@ -73,6 +73,25 @@ Passive drone detection via FAA Remote ID (Open Drone ID) WiFi beacon monitoring
 
 ---
 
+## WiFi Access Points
+
+Each mode creates its own AP. When switching modes, **your phone/laptop will auto-reconnect to the last saved network**, which may be the wrong mode's AP. To avoid confusion:
+
+- **Forget the previous mode's network** before switching, or
+- **Disable auto-connect/auto-reconnect** for all OUI-SPY networks in your WiFi settings
+
+| Mode | SSID | Password | Dashboard | Notes |
+|------|------|----------|-----------|-------|
+| **Boot Selector** | `oui-spy` | `ouispy123` | `192.168.4.1` | Configurable from selector UI, saved to NVS |
+| **Detector** | `snoopuntothem` | `astheysnoopuntous` | `192.168.4.1` | Configurable from web dashboard, saved to NVS |
+| **Foxhunter** | `foxhunter` | `foxhunter` | `192.168.4.1` | Fixed credentials |
+| **Flock-You** | `flockyou` | `flockyou123` | `192.168.4.1` | Fixed credentials |
+| **Sky Spy** | *none* | — | — | No AP — passive scanner, serial JSON output only |
+
+> **Tip:** If you can't reach the dashboard after a mode switch, check which WiFi network you're connected to. Your device may have auto-joined a previously saved OUI-SPY AP from a different mode.
+
+---
+
 ## Hardware
 
 **Board:** Seeed Studio XIAO ESP32-S3
