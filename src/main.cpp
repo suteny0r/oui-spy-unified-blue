@@ -176,7 +176,7 @@ function saveBZ(on){fetch('/buzzer?on='+(on?'1':'0'))}
 )rawliteral";
 
 // ============================================================================
-// Boot Jingle for Selector - Tetris Theme (Korobeiniki) first 4 notes
+// Boot Jingle for Selector - Zelda "Secret Discovered" Style
 // ============================================================================
 static void playNote(int freq, int duration) {
     ledcSetup(0, freq, 8);
@@ -187,16 +187,24 @@ static void playNote(int freq, int duration) {
 }
 
 static void selectorBeep() {
-    // 3 quick ascending tones — subtle boot confirmation
-    ledcSetup(0, 800, 8);
-    ledcAttachPin(BUZZER_PIN, 0);
-    ledcWrite(0, 40);     // low duty = quiet
-    delay(60);
-    ledcWriteTone(0, 1000);
-    delay(60);
-    ledcWriteTone(0, 1200);
-    delay(60);
-    ledcWrite(0, 0);
+    // "Secret discovered" ascending jingle
+    playNote(784, 150);   // G5
+    delay(20);
+    playNote(988, 150);   // B5
+    delay(20);
+    playNote(1175, 150);  // D6
+    delay(20);
+    playNote(1568, 400);  // G6 (hold)
+    delay(100);
+    
+    // LED flash sync
+    pinMode(LED_PIN, OUTPUT);
+    for (int i = 0; i < 3; i++) {
+        digitalWrite(LED_PIN, LOW);   // On
+        delay(50);
+        digitalWrite(LED_PIN, HIGH);  // Off
+        delay(50);
+    }
 }
 
 // ============================================================================
