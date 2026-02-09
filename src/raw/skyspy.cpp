@@ -73,8 +73,8 @@ static const uint8_t channels_5ghz[] = {149, 153, 157, 161, 165};
 #define NUM_5GHZ_CHANNELS (sizeof(channels_5ghz) / sizeof(channels_5ghz[0]))
 
 // Channel hopping timing (milliseconds)
-// Total cycle = DWELL_TIME_MS * (1 + NUM_5GHZ_CHANNELS) = ~180ms
-#define DWELL_TIME_MS 30
+// Total cycle = DWELL_TIME_MS * (1 + NUM_5GHZ_CHANNELS) = ~300ms
+#define DWELL_TIME_MS 50
 
 // ============================================================================
 // Audio Configuration
