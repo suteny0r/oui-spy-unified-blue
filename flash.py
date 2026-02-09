@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-OUI Spy Unified Blue -- Firmware Flasher
+OUI Spy Unified Blue -- Firmware Flasher (XIAO ESP32-C5)
 
 Drop your .bin in the firmware/ folder (or pass a path), plug in your
-XIAO ESP32-S3, and run:
+XIAO ESP32-C5, and run:
 
     python flash.py
 
@@ -34,9 +34,10 @@ if sys.platform == "win32":
         sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
 # -- Config ----------------------------------------------------------------
+# XIAO ESP32-C5: RISC-V, dual-band WiFi 6, different flash settings from S3
 APP_OFFSET    = "0x10000"
-BAUD          = "921600"
-CHIP          = "esp32s3"
+BAUD          = "115200"
+CHIP          = "esp32c5"
 FIRMWARE_DIR  = os.path.join(os.path.dirname(os.path.abspath(__file__)), "firmware")
 
 # Known USB VID:PID pairs for ESP32-S3 / common UART bridges
@@ -49,7 +50,7 @@ ESP_VIDS = {
 
 BANNER = """
   +==========================================+
-  |   OUI Spy Unified Blue -- Flasher        |
+  |   OUI Spy Unified Blue -- C5 Flasher     |
   +==========================================+"""
 
 
@@ -183,7 +184,7 @@ def flash_one(port, firmware, do_erase=False, board_num=None):
         "--after", "hard_reset",
         "write_flash",
         "-z",
-        "--flash_mode", "qio",
+        "--flash_mode", "dio",
         "--flash_freq", "80m",
         "--flash_size", "detect",
         APP_OFFSET, firmware,
