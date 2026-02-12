@@ -26,12 +26,17 @@
 #include <stdio.h>
 #include <stdint.h>
 #include "esp_wifi.h"
+#ifdef FLOCKYOU_NEOPIXEL
+#include <Adafruit_NeoPixel.h>
+#endif
 
 // ============================================================================
 // CONFIGURATION
 // ============================================================================
 
+#ifndef BUZZER_PIN
 #define BUZZER_PIN 3
+#endif
 
 // Audio
 #define LOW_FREQ 200
@@ -232,6 +237,100 @@ static void fyHeartbeat() {
 }
 
 // ============================================================================
+// NEOPIXEL (optional, enabled via -DFLOCKYOU_NEOPIXEL=pin)
+// ============================================================================
+
+#ifdef FLOCKYOU_NEOPIXEL
+static Adafruit_NeoPixel fyPixel(1, FLOCKYOU_NEOPIXEL, NEO_GRB + NEO_KHZ800);
+static bool fyPixelDetecting = false;
+static unsigned long fyPixelDetStart = 0;
+
+static void fyPixelInit() {
+    fyPixel.begin();
+    fyPixel.setBrightness(50);
+    fyPixel.clear();
+    fyPixel.show();
+}
+
+static void fyPixelSet(uint8_t r, uint8_t g, uint8_t b) {
+    fyPixel.setPixelColor(0, fyPixel.Color(r, g, b));
+    fyPixel.show();
+}
+
+static void fyPixelDetFlash() {
+    fyPixelDetecting = true;
+    fyPixelDetStart = millis();
+}
+
+static void fyPixelUpdate() {
+    if (fyPixelDetecting) {
+        // Detection: rapid pink/red flash for 1.5s
+        unsigned long elapsed = millis() - fyPixelDetStart;
+        if (elapsed > 1500) {
+            fyPixelDetecting = false;
+        } else {
+            bool on = (elapsed / 150) % 2 == 0;
+            if (on) fyPixelSet(255, 0, 80);  // hot pink
+            else    fyPixelSet(0, 0, 0);
+        }
+    } else if (fyDeviceInRange) {
+        // Device nearby: slow pink pulse
+        float b = (sin(millis() / 500.0) + 1.0) / 2.0;
+        uint8_t v = 20 + (uint8_t)(b * 80);
+        fyPixelSet(v, 0, v / 3);
+    } else {
+        // Idle scanning: dim purple breathing
+        float b = (sin(millis() / 2000.0) + 1.0) / 2.0;
+        uint8_t v = 5 + (uint8_t)(b * 30);
+        fyPixelSet(v / 2, 0, v);
+    }
+}
+#endif
+
+// ============================================================================
+// BUILT-IN LED (optional, enabled via -DFLOCKYOU_LED_PIN=pin, active LOW)
+// ============================================================================
+
+#ifdef FLOCKYOU_LED_PIN
+static bool fyLedDetecting = false;
+static unsigned long fyLedDetStart = 0;
+
+static void fyLedInit() {
+    pinMode(FLOCKYOU_LED_PIN, OUTPUT);
+    digitalWrite(FLOCKYOU_LED_PIN, HIGH);  // OFF (active LOW)
+}
+
+static void fyLedOn()  { digitalWrite(FLOCKYOU_LED_PIN, LOW); }
+static void fyLedOff() { digitalWrite(FLOCKYOU_LED_PIN, HIGH); }
+
+static void fyLedDetFlash() {
+    fyLedDetecting = true;
+    fyLedDetStart = millis();
+}
+
+static void fyLedUpdate() {
+    if (fyLedDetecting) {
+        // Detection: rapid blink for 1.5s
+        unsigned long elapsed = millis() - fyLedDetStart;
+        if (elapsed > 1500) {
+            fyLedDetecting = false;
+            fyLedOff();
+        } else {
+            bool on = (elapsed / 100) % 2 == 0;
+            if (on) fyLedOn(); else fyLedOff();
+        }
+    } else if (fyDeviceInRange) {
+        // Device nearby: slow blink (500ms on/off)
+        bool on = (millis() / 500) % 2 == 0;
+        if (on) fyLedOn(); else fyLedOff();
+    } else {
+        // Idle: off
+        fyLedOff();
+    }
+}
+#endif
+
+// ============================================================================
 // DETECTION HELPERS
 // ============================================================================
 
@@ -263,7 +362,11 @@ static bool checkManufacturerID(uint16_t id) {
 // RAVEN UUID DETECTION
 // ============================================================================
 
+#ifdef CONFIG_IDF_TARGET_ESP32C6
+static bool checkRavenUUID(const NimBLEAdvertisedDevice* device, char* out_uuid = nullptr) {
+#else
 static bool checkRavenUUID(NimBLEAdvertisedDevice* device, char* out_uuid = nullptr) {
+#endif
     if (!device || !device->haveServiceUUID()) return false;
     int count = device->getServiceUUIDCount();
     if (count == 0) return false;
@@ -280,7 +383,11 @@ static bool checkRavenUUID(NimBLEAdvertisedDevice* device, char* out_uuid = null
     return false;
 }
 
+#ifdef CONFIG_IDF_TARGET_ESP32C6
+static const char* estimateRavenFW(const NimBLEAdvertisedDevice* device) {
+#else
 static const char* estimateRavenFW(NimBLEAdvertisedDevice* device) {
+#endif
     if (!device || !device->haveServiceUUID()) return "?";
     bool has_new_gps = false, has_old_loc = false, has_power = false;
     int count = device->getServiceUUIDCount();
@@ -371,8 +478,13 @@ static int fyAddDetection(const char* mac, const char* name, int rssi,
 // BLE SCANNING
 // ============================================================================
 
+#ifdef CONFIG_IDF_TARGET_ESP32C6
+class FYBLECallbacks : public NimBLEScanCallbacks {
+    void onResult(const NimBLEAdvertisedDevice* dev) override {
+#else
 class FYBLECallbacks : public NimBLEAdvertisedDeviceCallbacks {
     void onResult(NimBLEAdvertisedDevice* dev) override {
+#endif
         NimBLEAddress addr = dev->getAddress();
         std::string addrStr = addr.toString();
 
@@ -463,6 +575,12 @@ class FYBLECallbacks : public NimBLEAdvertisedDeviceCallbacks {
                 fyTriggered = true;
                 fyDetectBeep();
             }
+#ifdef FLOCKYOU_NEOPIXEL
+            fyPixelDetFlash();
+#endif
+#ifdef FLOCKYOU_LED_PIN
+            fyLedDetFlash();
+#endif
             fyDeviceInRange = true;
             fyLastDetTime = millis();
             fyLastHB = millis();
@@ -957,6 +1075,24 @@ void setup() {
     pinMode(BUZZER_PIN, OUTPUT);
     digitalWrite(BUZZER_PIN, LOW);
 
+#ifdef FLOCKYOU_LED_PIN
+    fyLedInit();
+    // Boot blink: 3 quick flashes
+    for (int i = 0; i < 3; i++) {
+        fyLedOn(); delay(100);
+        fyLedOff(); delay(100);
+    }
+#endif
+#ifdef FLOCKYOU_NEOPIXEL
+    fyPixelInit();
+    // Boot flash: pink -> purple -> off
+    fyPixelSet(255, 0, 80);
+    delay(200);
+    fyPixelSet(80, 0, 200);
+    delay(200);
+    fyPixelSet(0, 0, 0);
+#endif
+
     fyMutex = xSemaphoreCreateMutex();
 
     // Init SPIFFS for session persistence
@@ -977,7 +1113,11 @@ void setup() {
     // Init BLE scanner FIRST -- start scanning immediately
     NimBLEDevice::init("");
     fyBLEScan = NimBLEDevice::getScan();
+#ifdef CONFIG_IDF_TARGET_ESP32C6
+    fyBLEScan->setScanCallbacks(new FYBLECallbacks());
+#else
     fyBLEScan->setAdvertisedDeviceCallbacks(new FYBLECallbacks());
+#endif
     fyBLEScan->setActiveScan(true);
     fyBLEScan->setInterval(100);
     fyBLEScan->setWindow(99);
@@ -1042,6 +1182,13 @@ void loop() {
         fySaveSession();
         fyLastSave = millis();
     }
+
+#ifdef FLOCKYOU_LED_PIN
+    fyLedUpdate();
+#endif
+#ifdef FLOCKYOU_NEOPIXEL
+    fyPixelUpdate();
+#endif
 
     delay(100);
 }

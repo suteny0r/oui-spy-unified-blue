@@ -23,6 +23,9 @@
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
 #include <SPIFFS.h>
+#ifdef FLOCKYOU_NEOPIXEL
+#include <Adafruit_NeoPixel.h>
+#endif
 #include "modes.h"
 
 // Rename setup/loop

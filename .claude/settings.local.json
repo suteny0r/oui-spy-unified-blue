@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh api:*)",
+      "WebSearch",
+      "WebFetch(domain:wiki.seeedstudio.com)",
+      "WebFetch(domain:www.espboards.dev)",
+      "WebFetch(domain:docs.cirkitdesigner.com)",
+      "WebFetch(domain:www.seeedstudio.com)",
+      "WebFetch(domain:openelab.io)",
+      "WebFetch(domain:gist.github.com)",
+      "WebFetch(domain:www.studiopieters.nl)",
+      "WebFetch(domain:esp32.co.uk)",
+      "WebFetch(domain:www.sigmdel.ca)",
+      "WebFetch(domain:h2zero.github.io)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)"
+    ]
+  }
+}
