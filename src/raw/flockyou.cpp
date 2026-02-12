@@ -69,7 +69,8 @@ static const char* mac_prefixes[] = {
     "f0:82:c0", "1c:34:f1", "38:5b:44", "94:34:69", "b4:e3:f9",
     // Flock WiFi devices
     "70:c9:4e", "3c:91:80", "d8:f3:bc", "80:30:49", "14:5a:fc",
-    "74:4c:a1", "08:3a:88", "9c:2f:9d", "94:08:53", "e4:aa:ea"
+    "74:4c:a1", "08:3a:88", "9c:2f:9d", "94:08:53", "e4:aa:ea",
+    "00:25:df"
 };
 
 // BLE device name patterns (matched case-insensitive substring)
