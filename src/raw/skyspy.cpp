@@ -209,10 +209,12 @@ void send_json_fast(const id_data *UAV) {
 
 void bleScanTask(void *parameter) {
   for (;;) {
+    // Short BLE scan with long gap to minimize WiFi promiscuous interference.
+    // ESP32 shares one 2.4GHz radio for BLE and WiFi; aggressive BLE scanning
+    // starves WiFi promiscuous mode, causing missed drone detections.
     NimBLEScanResults foundDevices = pBLEScan->start(1, false);
     pBLEScan->clearResults();
-    // No flag checking needed - BLE callback handles buzzer triggering
-    delay(100);
+    delay(10000);  // 10s gap between scans — gives WiFi promiscuous priority
   }
 }
 
@@ -425,7 +427,7 @@ void setup() {
   NimBLEDevice::init("DroneID");
   pBLEScan = NimBLEDevice::getScan();
   pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks());
-  pBLEScan->setActiveScan(true);
+  pBLEScan->setActiveScan(false);  // Passive scan — less radio contention with WiFi promisc
 
   printQueue = xQueueCreate(MAX_UAVS, sizeof(id_data));
   
