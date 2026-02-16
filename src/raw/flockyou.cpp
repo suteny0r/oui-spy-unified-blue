@@ -287,18 +287,14 @@ static uint32_t fyHsvToRgb(uint16_t h, uint8_t s, uint8_t v) {
 // Idle: slow purple breathing (hue 270)
 static void fyPixelBreathing() {
     static unsigned long lastUpdate = 0;
-    static float brightness = 0.0;
-    static bool increasing = true;
     if (millis() - lastUpdate < 20) return;
     lastUpdate = millis();
-    if (increasing) {
-        brightness += 0.02;
-        if (brightness >= 1.0) { brightness = 1.0; increasing = false; }
-    } else {
-        brightness -= 0.02;
-        if (brightness <= 0.1) { brightness = 0.1; increasing = true; }
-    }
-    uint32_t color = fyHsvToRgb(270, 255, (uint8_t)(FY_NEOPIXEL_BRIGHTNESS * brightness));
+    // Time-based sine wave: smooth regardless of loop speed
+    // 1500ms full cycle (~0.67Hz breathing rate)
+    float phase = (millis() % 1500) / 1500.0f * 2.0f * 3.14159f;
+    float val = (sinf(phase) + 1.0f) / 2.0f;  // 0.0 – 1.0
+    uint8_t v = 15 + (uint8_t)(val * 45);      // 15 – 60 range
+    uint32_t color = fyHsvToRgb(270, 255, v);
     fyPixel.setPixelColor(0, color);
     fyPixel.show();
 }
