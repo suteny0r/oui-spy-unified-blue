@@ -151,7 +151,6 @@ static Adafruit_NeoPixel fyPixel(1, FY_NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
 static bool fyPixelAlertMode = false;
 static unsigned long fyPixelAlertStart = 0;
 static unsigned long fyLastBleScan = 0;
-static bool fyTriggered = false;
 static bool fyDeviceInRange = false;
 static unsigned long fyLastDetTime = 0;
 static unsigned long fyLastHB = 0;
@@ -610,9 +609,8 @@ class FYBLECallbacks : public NimBLEAdvertisedDeviceCallbacks {
                        method, addrStr.c_str(), name.c_str(), rssi, gpsBuf);
             }
 
-            if (!fyTriggered) {
-                fyTriggered = true;
-                fyDetectBeep();
+            if (idx >= 0 && fyDet[idx].count == 1) {
+                fyDetectBeep();  // Flash + sound on every NEW device
             }
             fyDeviceInRange = true;
             fyLastDetTime = millis();
@@ -1090,7 +1088,6 @@ static void fySetupServer() {
         if (fyMutex && xSemaphoreTake(fyMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
             fyDetCount = 0;
             memset(fyDet, 0, sizeof(fyDet));
-            fyTriggered = false;
             fyDeviceInRange = false;
             xSemaphoreGive(fyMutex);
         }
@@ -1209,7 +1206,6 @@ void loop() {
         if (millis() - fyLastDetTime >= 30000) {
             printf("[FLOCK-YOU] Device out of range - stopping heartbeat\n");
             fyDeviceInRange = false;
-            fyTriggered = false;
         }
     }
 
