@@ -44,8 +44,13 @@ struct id_data {
   int      flag;
 };
 
+// Mesh UART on pins D4 (TX) and D5 (RX) for Heltec LoRa gateway
+const int SERIAL1_RX_PIN = 6;
+const int SERIAL1_TX_PIN = 5;
+
 void callback(void *, wifi_promiscuous_pkt_type_t);
 void send_json_fast(const id_data *UAV);
+void send_mesh_message(const id_data *UAV);
 void buzzerTask(void *parameter);
 
 #define MAX_UAVS 8
@@ -205,7 +210,43 @@ void send_json_fast(const id_data *UAV) {
   Serial.println(json_msg);
 }
 
-// Mesh functionality removed - this is now a pure USB serial drone scanner
+void send_mesh_message(const id_data *UAV) {
+  static unsigned long lastSendTime = 0;
+  const unsigned long sendInterval = 5000;
+  const int MAX_MESH_SIZE = 230;
+
+  if (millis() - lastSendTime < sendInterval) return;
+  lastSendTime = millis();
+
+  char mac_str[18];
+  snprintf(mac_str, sizeof(mac_str), "%02x:%02x:%02x:%02x:%02x:%02x",
+           UAV->mac[0], UAV->mac[1], UAV->mac[2],
+           UAV->mac[3], UAV->mac[4], UAV->mac[5]);
+
+  char mesh_msg[MAX_MESH_SIZE];
+  int msg_len = 0;
+  msg_len += snprintf(mesh_msg + msg_len, sizeof(mesh_msg) - msg_len,
+                      "Drone: %s RSSI:%d", mac_str, UAV->rssi);
+  if (msg_len < MAX_MESH_SIZE && UAV->lat_d != 0.0 && UAV->long_d != 0.0) {
+    msg_len += snprintf(mesh_msg + msg_len, sizeof(mesh_msg) - msg_len,
+                        " https://maps.google.com/?q=%.6f,%.6f",
+                        UAV->lat_d, UAV->long_d);
+  }
+  if (Serial1.availableForWrite() >= msg_len) {
+    Serial1.println(mesh_msg);
+  }
+
+  vTaskDelay(pdMS_TO_TICKS(1000));
+  if (UAV->base_lat_d != 0.0 && UAV->base_long_d != 0.0) {
+    char pilot_msg[MAX_MESH_SIZE];
+    int pilot_len = snprintf(pilot_msg, sizeof(pilot_msg),
+                             "Pilot: https://maps.google.com/?q=%.6f,%.6f",
+                             UAV->base_lat_d, UAV->base_long_d);
+    if (Serial1.availableForWrite() >= pilot_len) {
+      Serial1.println(pilot_msg);
+    }
+  }
+}
 
 void bleScanTask(void *parameter) {
   for (;;) {
@@ -351,14 +392,14 @@ void printerTask(void *param) {
   for (;;) {
     if (xQueueReceive(printQueue, &UAV, portMAX_DELAY)) {
       send_json_fast(&UAV);
-      // Mesh functionality removed - only JSON output over USB serial
+      send_mesh_message(&UAV);
     }
   }
 }
 
 void initializeSerial() {
   Serial.begin(115200);
-  // Serial1 removed - no mesh functionality
+  Serial1.begin(115200, SERIAL_8N1, SERIAL1_RX_PIN, SERIAL1_TX_PIN);
 }
 
 void initializeBuzzer() {
