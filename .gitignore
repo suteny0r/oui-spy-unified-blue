@@ -6,3 +6,8 @@
 # firmware/*.bin
 __pycache__/
 .venv/
+nul
+package.json
+package-lock.json
+src/idf_component.yml
+src/idf_component.yml.orig
