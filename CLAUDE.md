@@ -89,7 +89,7 @@ Note: Mode IDs 3 is skipped intentionally.
 - **LED:** GPIO 21 has inverted logic (LOW = ON). Optional NeoPixel on GPIO 4.
 - **Embedded HTML:** Stored as `PROGMEM` raw string literals with `%PLACEHOLDER%` template substitution.
 - **Device cooldowns:** Detection modes use timed cooldowns (3s or 30s) to prevent alert spam on the same device.
-- **Sky Spy differs:** Uses WiFi promiscuous mode (not BLE) to capture ASTM F3411 Open Drone ID frames. The OpenDroneID parser is in `src/opendroneid.h/c` and `src/wifi.c`.
+- **Sky Spy differs:** Uses WiFi promiscuous mode (+ BLE passive scan) to capture ASTM F3411 Open Drone ID frames. The OpenDroneID parser is in `src/opendroneid.h/c` and `src/wifi.c`. Outputs full JSON on USB Serial (every detection) and compact human-readable messages on Serial1 pins 5/6 (throttled to 5s) for Heltec LoRa/Meshtastic mesh forwarding. Serial1 is harmless when no mesh hardware is connected.
 
 ### Hardware
 
@@ -100,6 +100,8 @@ Note: Mode IDs 3 is skipped intentionally.
 | 0 | BOOT button (hold 2s → return to selector) |
 | 3 | Piezo buzzer (PWM, inverted logic) |
 | 4 | NeoPixel LED (optional) |
+| 5 / D4 | Serial1 TX — mesh UART to Heltec LoRa gateway (Sky Spy) |
+| 6 / D5 | Serial1 RX — mesh UART from Heltec LoRa gateway (Sky Spy) |
 | 21 | Onboard LED (inverted logic) |
 
 ### Dependencies (managed by PlatformIO)
